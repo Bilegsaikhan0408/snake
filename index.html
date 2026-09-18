@@ -67,12 +67,20 @@
   var CELL = 20;
   var COLS = canvas.width / CELL;
   var ROWS = canvas.height / CELL;
-  var TICK_MS = 110;
+  var START_TICK_MS = 150;
+  var MIN_TICK_MS = 70;
+  var SPEEDUP_MS = 8;      // faster by this much...
+  var SPEEDUP_EVERY = 3;   // ...every this many pieces of food
 
   var best = Number(localStorage.getItem("snake-best") || 0);
   bestEl.textContent = best;
 
-  var snake, dir, nextDir, food, score, running, paused, timer;
+  var snake, dir, nextDir, food, score, running, waiting, paused, timer, tickMs;
+
+  function startTimer() {
+    if (timer) clearInterval(timer);
+    timer = setInterval(tick, tickMs);
+  }
 
   function randomFood() {
     var cell;
@@ -97,21 +105,28 @@
     scoreEl.textContent = score;
     food = randomFood();
     running = true;
+    waiting = true;
     paused = false;
-    messageEl.textContent = "";
+    tickMs = START_TICK_MS;
+    messageEl.textContent = "Press an arrow key to start";
     if (timer) clearInterval(timer);
-    timer = setInterval(tick, TICK_MS);
+    draw();
   }
 
   function gameOver() {
     running = false;
     clearInterval(timer);
+    messageEl.textContent = "Game over — score " + score + ". Press Enter to restart.";
+    draw();
+    drawGameOver();
+  }
+
+  function updateBest() {
     if (score > best) {
       best = score;
       localStorage.setItem("snake-best", String(best));
       bestEl.textContent = best;
     }
-    messageEl.textContent = "Game over — score " + score + ". Press Enter to restart.";
   }
 
   function tick() {
@@ -134,7 +149,14 @@
     if (head.x === food.x && head.y === food.y) {
       score += 10;
       scoreEl.textContent = score;
+      updateBest();
       food = randomFood();
+      var newTick = Math.max(MIN_TICK_MS,
+        START_TICK_MS - SPEEDUP_MS * Math.floor(score / 10 / SPEEDUP_EVERY));
+      if (newTick !== tickMs) {
+        tickMs = newTick;
+        startTimer();
+      }
     } else {
       snake.pop();
     }
@@ -147,18 +169,31 @@
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     ctx.fillStyle = "#e04b4b";
-    ctx.fillRect(food.x * CELL, food.y * CELL, CELL, CELL);
+    ctx.fillRect(food.x * CELL + 1, food.y * CELL + 1, CELL - 2, CELL - 2);
 
     snake.forEach(function (s, i) {
-      ctx.fillStyle = i === 0 ? "#9fd39f" : "#4caf50";
+      ctx.fillStyle = i === 0 ? "#f2e94e" : "#3e9b44";
       ctx.fillRect(s.x * CELL + 1, s.y * CELL + 1, CELL - 2, CELL - 2);
     });
   }
 
+  function drawGameOver() {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "center";
+    ctx.font = "bold 36px system-ui, sans-serif";
+    ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 6);
+    ctx.font = "18px system-ui, sans-serif";
+    ctx.fillText("Score " + score + " · Enter to restart", canvas.width / 2, canvas.height / 2 + 26);
+  }
+
+  // Returns true if the direction was accepted.
   function setDirection(x, y) {
     // Ignore reversals directly into the snake's own neck.
-    if (snake.length > 1 && dir.x === -x && dir.y === -y) return;
+    if (snake.length > 1 && dir.x === -x && dir.y === -y) return false;
     nextDir = { x: x, y: y };
+    return true;
   }
 
   var KEY_MAP = {
@@ -170,11 +205,11 @@
 
   document.addEventListener("keydown", function (e) {
     if (e.key === "Enter") {
-      if (!running) reset();
+      reset();
       return;
     }
     if (e.key === " ") {
-      if (running) {
+      if (running && !waiting) {
         paused = !paused;
         messageEl.textContent = paused ? "Paused" : "";
       }
@@ -183,13 +218,17 @@
     }
     var mapped = KEY_MAP[e.key];
     if (mapped && running) {
-      setDirection(mapped[0], mapped[1]);
+      var accepted = setDirection(mapped[0], mapped[1]);
+      if (accepted && waiting) {
+        waiting = false;
+        messageEl.textContent = "";
+        startTimer();
+      }
       e.preventDefault();
     }
   });
 
   reset();
-  draw();
 })();
 </script>
 </body>
